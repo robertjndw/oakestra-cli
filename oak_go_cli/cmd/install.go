@@ -33,6 +33,7 @@ var (
 	installRootYes    bool
 	installClusterYes bool
 	installWorkerYes  bool
+	installWorkerGPU  bool
 	installFullYes    bool
 	installSudo       bool
 )
@@ -50,6 +51,8 @@ func init() {
 	installRootCmd.Flags().BoolVarP(&installRootYes, "yes", "y", false, "Skip confirmation prompt")
 	installClusterCmd.Flags().BoolVarP(&installClusterYes, "yes", "y", false, "Skip confirmation prompt")
 	installWorkerCmd.Flags().BoolVarP(&installWorkerYes, "yes", "y", false, "Skip confirmation prompt")
+	installWorkerCmd.Flags().BoolVar(&installWorkerGPU, "gpu", false,
+		"Also configure NVIDIA Container Toolkit for GPU workloads")
 	installFullCmd.Flags().BoolVarP(&installFullYes, "yes", "y", false, "Skip all confirmation prompts")
 }
 
@@ -187,18 +190,22 @@ var installWorkerCmd = &cobra.Command{
 	Long: `Install a NodeEngine worker node on this machine.
 
 Prerequisites:
+  - amd64 or arm64 Linux host with systemd
   - At least one cluster orchestrator must be running and registered
     with the root orchestrator.
 
 After installation the CLI will let you pick which cluster this
-worker should join and will configure NodeEngine automatically.`,
+worker should join and will configure NodeEngine automatically.
+
+Flags:
+  --gpu   Also configure NVIDIA Container Toolkit (nvidia-docker2) for GPU workloads.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return doInstallWorker(firstArg(args), installWorkerYes, installSudo)
+		return doInstallWorker(firstArg(args), installWorkerYes, installWorkerGPU, installSudo)
 	},
 }
 
-func doInstallWorker(version string, yes, sudo bool) error {
+func doInstallWorker(version string, yes, gpu, sudo bool) error {
 	// Step 0: best-effort cluster presence check.
 	client, clientErr := api.New()
 	if clientErr == nil {
@@ -213,6 +220,11 @@ func doInstallWorker(version string, yes, sudo bool) error {
 	// Step 1: Check prerequisites.
 	if err := checkFundamentals(); err != nil {
 		return err
+	}
+	if runtime.GOOS == "linux" {
+		if err := checkWorkerPrereqs(); err != nil {
+			return err
+		}
 	}
 
 	// Step 2: Confirm.
@@ -230,7 +242,18 @@ func doInstallWorker(version string, yes, sudo bool) error {
 		return fmt.Errorf("worker installation failed: %w", err)
 	}
 
-	// Step 5: Cluster selection and NodeEngine config.
+	// Step 5: Optional GPU configuration.
+	if gpu {
+		fmt.Println("\nConfiguring NVIDIA Container Toolkit…")
+		if err := configureGPU(); err != nil {
+			fmt.Fprintf(os.Stderr, "%s GPU configuration failed: %v\n", yellow("Warning:"), err)
+			fmt.Println("Run manually: " + bold("oak worker configure-gpu"))
+		} else {
+			fmt.Printf("%s NVIDIA Container Toolkit configured.\n", green("✓"))
+		}
+	}
+
+	// Step 6: Cluster selection and NodeEngine config.
 	if clientErr == nil {
 		if err := configureWorkerCluster(client); err != nil {
 			fmt.Fprintf(os.Stderr, "%s could not configure cluster automatically: %v\n", yellow("Warning:"), err)
@@ -238,7 +261,7 @@ func doInstallWorker(version string, yes, sudo bool) error {
 		}
 	}
 
-	// Step 6: Optionally start the worker now.
+	// Step 7: Optionally start the worker now.
 	fmt.Println()
 	if confirmPromptYN("Start the worker node now?", yes) {
 		fmt.Println("Starting NodeEngine…")
@@ -247,7 +270,7 @@ func doInstallWorker(version string, yes, sudo bool) error {
 		}
 	}
 
-	// Step 7: Completion hint.
+	// Step 8: Completion hint.
 	fmt.Printf("\n%s  Use %s to manage the worker node.\n",
 		green("✓ Worker node installed."), bold("oak worker"))
 	return nil
@@ -411,7 +434,7 @@ Requires Docker with Compose support.`,
 			return nil
 		}
 		// Worker start prompt still respects the yes flag.
-		if err := doInstallWorker(version, yes, installSudo); err != nil {
+		if err := doInstallWorker(version, yes, false, installSudo); err != nil {
 			return fmt.Errorf("worker install: %w", err)
 		}
 		return nil
