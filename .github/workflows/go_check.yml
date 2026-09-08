@@ -1,0 +1,49 @@
+name: Go check
+
+on:
+  pull_request:
+    paths:
+      - 'oak_go_cli/**'
+      - 'oakestra-go/**'
+      - 'go.work'
+      - '.github/workflows/go_check.yml'
+  push:
+    branches:
+      - master
+    paths:
+      - 'oak_go_cli/**'
+      - 'oakestra-go/**'
+      - 'go.work'
+      - '.github/workflows/go_check.yml'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.25.0
+
+      - name: Build
+        run: go build ./oak_go_cli/... ./oakestra-go/...
+
+      - name: Vet
+        run: go vet ./oak_go_cli/... ./oakestra-go/...
+
+      - name: Test
+        run: go test ./oak_go_cli/... ./oakestra-go/...
+
+      - name: golangci-lint (oak_go_cli)
+        uses: golangci/golangci-lint-action@v6
+        with:
+          working-directory: oak_go_cli
+          version: latest
+
+      - name: golangci-lint (oakestra-go)
+        uses: golangci/golangci-lint-action@v6
+        with:
+          working-directory: oakestra-go
+          version: latest
