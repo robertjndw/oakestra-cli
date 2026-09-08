@@ -1,25 +1,35 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/oakestra/oak-go-cli/internal/api"
 	"github.com/oakestra/oak-go-cli/internal/config"
+	oakestra "github.com/oakestra/oakestra-cli/oakestra-go"
 )
+
+// completionTimeout bounds how long shell completion will wait on the
+// System Manager. Completions must never hang the user's shell on an
+// unreachable orchestrator.
+const completionTimeout = 3 * time.Second
 
 // completeApplications returns shell completions for application names and IDs.
 // Each entry is formatted as "value\tdescription" so the shell shows context.
-func completeApplications(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+func completeApplications(cmd *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 	client, err := api.New()
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	apps, err := client.GetApplications()
+	ctx, cancel := context.WithTimeout(cmd.Context(), completionTimeout)
+	defer cancel()
+	apps, _, err := client.Applications.List(ctx)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
@@ -34,12 +44,14 @@ func completeApplications(_ *cobra.Command, _ []string, _ string) ([]string, cob
 }
 
 // completeServices returns shell completions for service names and IDs.
-func completeServices(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+func completeServices(cmd *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 	client, err := api.New()
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	svcs, err := client.GetAllServices("")
+	ctx, cancel := context.WithTimeout(cmd.Context(), completionTimeout)
+	defer cancel()
+	svcs, _, err := client.Services.List(ctx, nil)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
@@ -56,23 +68,25 @@ func completeServices(_ *cobra.Command, _ []string, _ string) ([]string, cobra.S
 
 // completeServiceThenInstances completes the first arg as a service name/ID and
 // the second arg as an instance number of that service.
-func completeServiceThenInstances(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+func completeServiceThenInstances(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	if len(args) == 0 {
-		return completeServices(nil, nil, "")
+		return completeServices(cmd, args, toComplete)
 	}
 	if len(args) == 1 {
-		return instanceCompletions(args[0])
+		return instanceCompletions(cmd, args[0])
 	}
 	return nil, cobra.ShellCompDirectiveNoFileComp
 }
 
 // instanceCompletions fetches running instances for a given service arg.
-func instanceCompletions(serviceArg string) ([]string, cobra.ShellCompDirective) {
+func instanceCompletions(cmd *cobra.Command, serviceArg string) ([]string, cobra.ShellCompDirective) {
 	client, err := api.New()
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	svc, err := client.ResolveServiceID(serviceArg)
+	ctx, cancel := context.WithTimeout(cmd.Context(), completionTimeout)
+	defer cancel()
+	svc, _, err := client.Services.ResolveByNameOrID(ctx, serviceArg)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
@@ -89,7 +103,7 @@ func instanceCompletions(serviceArg string) ([]string, cobra.ShellCompDirective)
 //	arg 0 → "up" or "down"
 //	arg 1 → service name / ID
 //	arg 2 → count (no completion)
-func completeScale(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+func completeScale(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	switch len(args) {
 	case 0:
 		return []string{
@@ -97,7 +111,7 @@ func completeScale(_ *cobra.Command, args []string, _ string) ([]string, cobra.S
 			"down\tUndeploy existing instances",
 		}, cobra.ShellCompDirectiveNoFileComp
 	case 1:
-		return completeServices(nil, nil, "")
+		return completeServices(cmd, args, toComplete)
 	default:
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
@@ -123,12 +137,14 @@ func completeSLAFiles(_ *cobra.Command, _ []string, _ string) ([]string, cobra.S
 }
 
 // completeClusters returns shell completions for cluster names and IDs.
-func completeClusters(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+func completeClusters(cmd *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 	client, err := api.New()
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	clusters, err := client.GetClusters(true)
+	ctx, cancel := context.WithTimeout(cmd.Context(), completionTimeout)
+	defer cancel()
+	clusters, _, err := client.Clusters.List(ctx, &oakestra.ClusterListOptions{ActiveOnly: false})
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}

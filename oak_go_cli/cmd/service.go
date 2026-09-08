@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/oakestra/oak-go-cli/internal/api"
+	oakestra "github.com/oakestra/oakestra-cli/oakestra-go"
 )
 
 // serviceCmd is the top-level "service" / "s" command.
@@ -67,15 +69,16 @@ var svcShowCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		ctx := cmd.Context()
 
 		appID := svcShowAppID
 		if svcShowAppName != "" && appID == "" {
-			if appID, err = resolveAppIDByName(client, svcShowAppName); err != nil {
+			if appID, err = resolveAppIDByName(ctx, client, svcShowAppName); err != nil {
 				return err
 			}
 		}
 
-		svcs, err := client.GetAllServices(appID)
+		svcs, _, err := client.Services.List(ctx, &oakestra.ServiceListOptions{ApplicationID: appID})
 		if err != nil {
 			return err
 		}
@@ -110,6 +113,7 @@ var svcInspectCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		ctx := cmd.Context()
 
 		instanceNum := -1
 		if len(args) == 2 {
@@ -121,7 +125,7 @@ var svcInspectCmd = &cobra.Command{
 		}
 
 		run := func() error {
-			svc, err := client.ResolveServiceID(args[0])
+			svc, _, err := client.Services.ResolveByNameOrID(ctx, args[0])
 			if err != nil {
 				return err
 			}
@@ -139,7 +143,9 @@ var svcInspectCmd = &cobra.Command{
 		for {
 			clearScreen()
 			if err := run(); err != nil {
-				fmt.Fprintln(os.Stderr, err)
+				// This loop never returns to Execute(), so it has to apply
+				// the hint itself rather than relying on the central one.
+				fmt.Fprintln(os.Stderr, api.Hint(err))
 			}
 			fmt.Println(dim("\nRefreshing every 5s — Ctrl+C to stop"))
 			time.Sleep(5 * time.Second)
@@ -166,13 +172,14 @@ var svcLogsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		ctx := cmd.Context()
 		instanceNum, err := strconv.Atoi(args[1])
 		if err != nil {
 			return fmt.Errorf("instance number must be an integer, got %q", args[1])
 		}
 
 		run := func() error {
-			svc, err := client.ResolveServiceID(args[0])
+			svc, _, err := client.Services.ResolveByNameOrID(ctx, args[0])
 			if err != nil {
 				return err
 			}
@@ -200,7 +207,9 @@ var svcLogsCmd = &cobra.Command{
 		for {
 			clearScreen()
 			if err := run(); err != nil {
-				fmt.Fprintln(os.Stderr, err)
+				// This loop never returns to Execute(), so it has to apply
+				// the hint itself rather than relying on the central one.
+				fmt.Fprintln(os.Stderr, api.Hint(err))
 			}
 			fmt.Println(dim("\nRefreshing every 5s — Ctrl+C to stop"))
 			time.Sleep(5 * time.Second)
@@ -230,19 +239,20 @@ To deploy multiple instances at once, use: oak s scale up <id|name> <count>`,
 		if err != nil {
 			return err
 		}
+		ctx := cmd.Context()
 
 		if svcDeployAll {
-			return deployAll(client)
+			return deployAll(ctx, client)
 		}
 		if len(args) == 0 {
 			return fmt.Errorf("provide a service ID/name or use --all")
 		}
 
-		svc, err := client.ResolveServiceID(args[0])
+		svc, _, err := client.Services.ResolveByNameOrID(ctx, args[0])
 		if err != nil {
 			return err
 		}
-		if err := client.DeployInstance(svc.MicroserviceID); err != nil {
+		if _, err := client.Services.DeployInstance(ctx, svc.MicroserviceID); err != nil {
 			return err
 		}
 		fmt.Printf("✓ Deployed new instance for %s (%s)\n",
@@ -252,8 +262,8 @@ To deploy multiple instances at once, use: oak s scale up <id|name> <count>`,
 }
 
 // deployAll sends one deploy request per registered service.
-func deployAll(client *api.Client) error {
-	svcs, err := client.GetAllServices("")
+func deployAll(ctx context.Context, client *oakestra.Client) error {
+	svcs, _, err := client.Services.List(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -265,8 +275,8 @@ func deployAll(client *api.Client) error {
 	bar := newBar(len(svcs), "Deploying")
 	var failed int
 	for _, svc := range svcs {
-		if err := client.DeployInstance(svc.MicroserviceID); err != nil {
-			fmt.Fprintf(os.Stderr, "\n  ✗ %s: %v\n", svc.MicroserviceName, err)
+		if _, err := client.Services.DeployInstance(ctx, svc.MicroserviceID); err != nil {
+			fmt.Fprintf(os.Stderr, "\n  ✗ %s: %v\n", svc.MicroserviceName, api.Hint(err))
 			failed++
 		}
 		bar.Add(1) //nolint:errcheck
@@ -298,23 +308,24 @@ To undeploy multiple specific instances, use: oak s scale down <id|name> <count>
 		if err != nil {
 			return err
 		}
-		svc, err := client.ResolveServiceID(args[0])
+		ctx := cmd.Context()
+		svc, _, err := client.Services.ResolveByNameOrID(ctx, args[0])
 		if err != nil {
 			return err
 		}
 
 		if len(args) == 1 {
-			return undeployAll(client, svc)
+			return undeployAll(ctx, client, svc)
 		}
 		n, err := strconv.Atoi(args[1])
 		if err != nil || n < 0 {
 			return fmt.Errorf("instance number must be a non-negative integer, got %q", args[1])
 		}
-		return undeployOne(client, svc, n)
+		return undeployOne(ctx, client, svc, n)
 	},
 }
 
-func undeployAll(client *api.Client, svc *api.Service) error {
+func undeployAll(ctx context.Context, client *oakestra.Client, svc *oakestra.Service) error {
 	instances := svc.InstanceList
 	if len(instances) == 0 {
 		fmt.Printf("Service %s has no running instances.\n", colorName(svc.MicroserviceName))
@@ -324,8 +335,8 @@ func undeployAll(client *api.Client, svc *api.Service) error {
 	bar := newBar(len(instances), "Undeploying")
 	var failed int
 	for _, inst := range instances {
-		if err := client.UndeployInstance(svc.MicroserviceID, inst.InstanceNumber); err != nil {
-			fmt.Fprintf(os.Stderr, "\n  ✗ instance %d: %v\n", inst.InstanceNumber, err)
+		if _, err := client.Services.UndeployInstance(ctx, svc.MicroserviceID, inst.InstanceNumber); err != nil {
+			fmt.Fprintf(os.Stderr, "\n  ✗ instance %d: %v\n", inst.InstanceNumber, api.Hint(err))
 			failed++
 		}
 		bar.Add(1) //nolint:errcheck
@@ -336,8 +347,8 @@ func undeployAll(client *api.Client, svc *api.Service) error {
 	return nil
 }
 
-func undeployOne(client *api.Client, svc *api.Service, instanceID int) error {
-	if err := client.UndeployInstance(svc.MicroserviceID, instanceID); err != nil {
+func undeployOne(ctx context.Context, client *oakestra.Client, svc *oakestra.Service, instanceID int) error {
+	if _, err := client.Services.UndeployInstance(ctx, svc.MicroserviceID, instanceID); err != nil {
 		return err
 	}
 	fmt.Printf("✓ Undeployed instance %d of %s (%s)\n",
@@ -373,25 +384,26 @@ var svcScaleCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		svc, err := client.ResolveServiceID(args[1])
+		ctx := cmd.Context()
+		svc, _, err := client.Services.ResolveByNameOrID(ctx, args[1])
 		if err != nil {
 			return err
 		}
 
 		if direction == "up" {
-			return scaleUp(client, svc, count)
+			return scaleUp(ctx, client, svc, count)
 		}
-		return scaleDown(client, svc, count)
+		return scaleDown(ctx, client, svc, count)
 	},
 }
 
-func scaleUp(client *api.Client, svc *api.Service, count int) error {
+func scaleUp(ctx context.Context, client *oakestra.Client, svc *oakestra.Service, count int) error {
 	fmt.Printf("Scaling up %s by %d instance(s)…\n", colorName(svc.MicroserviceName), count)
 	bar := newBar(count, "Deploying")
 	var failed int
 	for i := 0; i < count; i++ {
-		if err := client.DeployInstance(svc.MicroserviceID); err != nil {
-			fmt.Fprintf(os.Stderr, "\n  ✗ deploy %d/%d: %v\n", i+1, count, err)
+		if _, err := client.Services.DeployInstance(ctx, svc.MicroserviceID); err != nil {
+			fmt.Fprintf(os.Stderr, "\n  ✗ deploy %d/%d: %v\n", i+1, count, api.Hint(err))
 			failed++
 		}
 		bar.Add(1) //nolint:errcheck
@@ -402,7 +414,7 @@ func scaleUp(client *api.Client, svc *api.Service, count int) error {
 	return nil
 }
 
-func scaleDown(client *api.Client, svc *api.Service, count int) error {
+func scaleDown(ctx context.Context, client *oakestra.Client, svc *oakestra.Service, count int) error {
 	instances := svc.InstanceList
 	if len(instances) == 0 {
 		fmt.Printf("Service %s has no running instances to remove.\n", colorName(svc.MicroserviceName))
@@ -417,8 +429,8 @@ func scaleDown(client *api.Client, svc *api.Service, count int) error {
 	bar := newBar(len(toRemove), "Undeploying")
 	var failed int
 	for _, inst := range toRemove {
-		if err := client.UndeployInstance(svc.MicroserviceID, inst.InstanceNumber); err != nil {
-			fmt.Fprintf(os.Stderr, "\n  ✗ instance %d: %v\n", inst.InstanceNumber, err)
+		if _, err := client.Services.UndeployInstance(ctx, svc.MicroserviceID, inst.InstanceNumber); err != nil {
+			fmt.Fprintf(os.Stderr, "\n  ✗ instance %d: %v\n", inst.InstanceNumber, api.Hint(err))
 			failed++
 		}
 		bar.Add(1) //nolint:errcheck
@@ -431,7 +443,7 @@ func scaleDown(client *api.Client, svc *api.Service, count int) error {
 
 // ─── display helpers ──────────────────────────────────────────────────────────
 
-func printServicesTable(svcs []api.Service) {
+func printServicesTable(svcs []*oakestra.Service) {
 	headers := []string{"SERVICE ID", "NAME", "NAMESPACE", "APPLICATION", "INSTANCES", "STATUS"}
 	rows := make([][]string, len(svcs))
 	for i, s := range svcs {
@@ -448,11 +460,11 @@ func printServicesTable(svcs []api.Service) {
 }
 
 // printServiceInstanceList shows the instance table for a service.
-func printServiceInstanceList(svc *api.Service) {
+func printServiceInstanceList(svc *oakestra.Service) {
 	fmt.Printf("%s  %s  %s\n\n",
 		colorName(svc.MicroserviceName),
 		colorID(svc.MicroserviceID),
-		colorStatus(serviceStatusText(*svc)),
+		colorStatus(serviceStatusText(svc)),
 	)
 	if len(svc.InstanceList) == 0 {
 		fmt.Println(dim("No running instances."))
@@ -484,7 +496,7 @@ func printServiceInstanceList(svc *api.Service) {
 }
 
 // printInstanceDetail shows an expanded view of a single instance.
-func printInstanceDetail(svc *api.Service, instanceNum int) {
+func printInstanceDetail(svc *oakestra.Service, instanceNum int) {
 	inst, ok := findInstance(svc, instanceNum)
 	if !ok {
 		fmt.Printf("Instance %d not found for service %s.\n",
@@ -537,7 +549,7 @@ func printInstanceDetail(svc *api.Service, instanceNum int) {
 	}
 }
 
-func serviceStatusText(svc api.Service) string {
+func serviceStatusText(svc *oakestra.Service) string {
 	if len(svc.InstanceList) == 0 {
 		return "no instances"
 	}
@@ -552,7 +564,7 @@ func serviceStatusText(svc api.Service) string {
 
 // ─── misc helpers ─────────────────────────────────────────────────────────────
 
-func findInstance(svc *api.Service, num int) (*api.ServiceInstance, bool) {
+func findInstance(svc *oakestra.Service, num int) (*oakestra.ServiceInstance, bool) {
 	for i := range svc.InstanceList {
 		if svc.InstanceList[i].InstanceNumber == num {
 			return &svc.InstanceList[i], true
@@ -583,12 +595,12 @@ func newBar(total int, description string) *progressbar.ProgressBar {
 
 // ─── resolve app by name ──────────────────────────────────────────────────────
 
-func resolveAppIDByName(client *api.Client, name string) (string, error) {
-	apps, err := client.GetApplications()
+func resolveAppIDByName(ctx context.Context, client *oakestra.Client, name string) (string, error) {
+	apps, _, err := client.Applications.List(ctx)
 	if err != nil {
 		return "", err
 	}
-	var matches []api.Application
+	var matches []*oakestra.Application
 	for _, a := range apps {
 		if a.ApplicationName == name {
 			matches = append(matches, a)

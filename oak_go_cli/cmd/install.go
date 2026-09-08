@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/oakestra/oak-go-cli/internal/api"
 	"github.com/oakestra/oak-go-cli/internal/config"
+	oakestra "github.com/oakestra/oakestra-cli/oakestra-go"
 )
 
 // ─── top-level install command ────────────────────────────────────────────────
@@ -194,15 +196,15 @@ After installation the CLI will let you pick which cluster this
 worker should join and will configure NodeEngine automatically.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return doInstallWorker(firstArg(args), installWorkerYes, installSudo)
+		return doInstallWorker(cmd.Context(), firstArg(args), installWorkerYes, installSudo)
 	},
 }
 
-func doInstallWorker(version string, yes, sudo bool) error {
+func doInstallWorker(ctx context.Context, version string, yes, sudo bool) error {
 	// Step 0: best-effort cluster presence check.
 	client, clientErr := api.New()
 	if clientErr == nil {
-		clusters, err := client.GetClusters(false)
+		clusters, _, err := client.Clusters.List(ctx, &oakestra.ClusterListOptions{ActiveOnly: true})
 		if err != nil || len(clusters) == 0 {
 			fmt.Println(yellow("Warning: no active clusters found. Make sure a cluster orchestrator is registered with the root orchestrator before proceeding."))
 		}
@@ -232,8 +234,10 @@ func doInstallWorker(version string, yes, sudo bool) error {
 
 	// Step 5: Cluster selection and NodeEngine config.
 	if clientErr == nil {
-		if err := configureWorkerCluster(client); err != nil {
-			fmt.Fprintf(os.Stderr, "%s could not configure cluster automatically: %v\n", yellow("Warning:"), err)
+		if err := configureWorkerCluster(ctx, client); err != nil {
+			// This is a warning, not a returned error, so it never reaches
+			// Execute()'s central hint. Apply it here instead.
+			fmt.Fprintf(os.Stderr, "%s could not configure cluster automatically: %v\n", yellow("Warning:"), api.Hint(err))
 			fmt.Println("Run manually: " + bold("sudo NodeEngine config cluster <IP>"))
 		}
 	}
@@ -255,14 +259,18 @@ func doInstallWorker(version string, yes, sudo bool) error {
 
 // clusterProbe holds the reachability result for a single cluster.
 type clusterProbe struct {
-	cluster     api.Cluster
+	cluster     *oakestra.Cluster
 	reachable   bool
 	reachableIP string
 }
 
 // probeCluster GETs <ip>:10100/status with a 3 s timeout and returns true
 // only if the response parses and cluster_id matches the expected value.
-func probeCluster(cluster api.Cluster, ip string) bool {
+//
+// This talks to the cluster manager directly (port 10100, unauthenticated).
+// The oakestra-go client only covers the System Manager, so this stays
+// plain net/http rather than going through it.
+func probeCluster(cluster *oakestra.Cluster, ip string) bool {
 	type statusResp struct {
 		ClusterID string `json:"cluster_id"`
 	}
@@ -281,7 +289,7 @@ func probeCluster(cluster api.Cluster, ip string) bool {
 
 // probeAllClusters probes every cluster in parallel.
 // For each one it tries CLUSTER_IP first, then ROOT_IP as a fallback.
-func probeAllClusters(clusters []api.Cluster, rootIP string) []clusterProbe {
+func probeAllClusters(clusters []*oakestra.Cluster, rootIP string) []clusterProbe {
 	results := make([]clusterProbe, len(clusters))
 	var wg sync.WaitGroup
 	wg.Add(len(clusters))
@@ -305,8 +313,8 @@ func probeAllClusters(clusters []api.Cluster, rootIP string) []clusterProbe {
 
 // configureWorkerCluster shows registered clusters with reachability status and runs
 // `sudo NodeEngine config cluster <IP>` for the selected one.
-func configureWorkerCluster(client *api.Client) error {
-	clusters, err := client.GetClusters(false)
+func configureWorkerCluster(ctx context.Context, client *oakestra.Client) error {
+	clusters, _, err := client.Clusters.List(ctx, &oakestra.ClusterListOptions{ActiveOnly: true})
 	if err != nil {
 		return err
 	}
@@ -390,12 +398,13 @@ Requires Docker with Compose support.`,
 		// Wait untill the orchestrators are up and registered before proceeding with the worker install, otherwise it will fail to auto-configure the cluster.
 		fmt.Println("Waiting for orchestrators to start…")
 		attempt := 0
+		ctx := cmd.Context()
 		client, err := api.New()
 		if err != nil {
 			return err
 		}
 		for attempt < 5 {
-			clusters, err := client.GetClusters(clusterListAll)
+			clusters, _, err := client.Clusters.List(ctx, &oakestra.ClusterListOptions{ActiveOnly: !clusterListAll})
 			if err != nil {
 				return err
 			}
@@ -411,7 +420,7 @@ Requires Docker with Compose support.`,
 			return nil
 		}
 		// Worker start prompt still respects the yes flag.
-		if err := doInstallWorker(version, yes, installSudo); err != nil {
+		if err := doInstallWorker(ctx, version, yes, installSudo); err != nil {
 			return fmt.Errorf("worker install: %w", err)
 		}
 		return nil

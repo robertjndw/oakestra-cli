@@ -9,6 +9,8 @@ import (
 	"text/template"
 
 	"github.com/spf13/cobra"
+
+	"github.com/oakestra/oak-go-cli/internal/api"
 )
 
 const rawBanner = `
@@ -64,16 +66,24 @@ var rootCmd = &cobra.Command{
 	Use:   "oak",
 	Short: "oak — Oakestra CLI (Go edition)",
 	Long:  colorBanner() + "A fast, portable CLI for managing Oakestra deployments.",
+	// Without this Cobra prints the raw (un-hinted) error itself before
+	// Execute() below gets a chance to apply api.Hint. Setting it on the
+	// root propagates to every subcommand, so Execute() stays the single
+	// print point.
+	SilenceErrors: true,
 	// Show help when called with no arguments.
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	},
 }
 
-// Execute is the single entry-point called from main.go.
+// Execute is the single entry-point called from main.go. Every RunE that
+// returns an error, directly or wrapped with %w, passes through here, so
+// this is the one place that needs to apply api.Hint; individual commands
+// just return the raw error.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, api.Hint(err))
 		os.Exit(1)
 	}
 }

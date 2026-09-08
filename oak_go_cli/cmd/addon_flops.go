@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"bufio"
-	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,12 +11,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/oakestra/oak-go-cli/internal/api"
 	"github.com/oakestra/oak-go-cli/internal/config"
+	oakestra "github.com/oakestra/oakestra-cli/oakestra-go"
 )
 
 // addonFlopsCmd is the "oak addon flops" command.
@@ -62,7 +62,7 @@ var flopsProjectCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return flopsPost("/api/flops/projects", sla,
+		return flopsPost(cmd.Context(), "/api/flops/projects", sla,
 			fmt.Sprintf("Init new FLOps project for SLA '%s'", slaPath))
 	},
 }
@@ -83,7 +83,7 @@ var flopsMockDataCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return flopsPost("/api/flops/mocks", sla,
+		return flopsPost(cmd.Context(), "/api/flops/mocks", sla,
 			fmt.Sprintf("Init a new FLOps mock data service for SLA '%s'", slaPath))
 	},
 }
@@ -103,7 +103,7 @@ Returns the URL of the tracking server for the specified customer (default: Admi
 		if len(args) == 1 {
 			customerID = args[0]
 		}
-		return flopsGet("/api/flops/tracking", map[string]string{"customerID": customerID})
+		return flopsGet(cmd.Context(), "/api/flops/tracking", map[string]string{"customerID": customerID})
 	},
 }
 
@@ -119,7 +119,7 @@ var flopsResetDatabaseCmd = &cobra.Command{
 		if len(args) == 1 {
 			customerID = args[0]
 		}
-		return flopsDelete("/api/flops/database", map[string]string{"customerID": customerID})
+		return flopsDelete(cmd.Context(), "/api/flops/database", map[string]string{"customerID": customerID})
 	},
 }
 
@@ -203,6 +203,31 @@ func flopsBaseURL() (string, error) {
 		ip = config.DefaultSystemManagerIP
 	}
 	return fmt.Sprintf("http://%s:5072", ip), nil
+}
+
+// flopsClient builds an oakestra-go client pointed at the FL Manager (port
+// 5072) instead of the System Manager (port 10000). It reuses the System
+// Manager's bearer token rather than logging in separately, since both
+// services accept the same Oakestra credentials.
+func flopsClient(ctx context.Context) (*oakestra.Client, error) {
+	smClient, err := api.New()
+	if err != nil {
+		return nil, err
+	}
+	token, err := smClient.Token(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	baseURL, err := flopsBaseURL()
+	if err != nil {
+		return nil, err
+	}
+	return oakestra.NewClient(
+		oakestra.WithBaseURL(baseURL),
+		oakestra.WithToken(token),
+		oakestra.WithUserAgent("oak-cli"),
+	)
 }
 
 // flopsComposePath returns the path to the FLOps management docker-compose file.
@@ -305,37 +330,25 @@ func printSLAFile(path string) error {
 	return nil
 }
 
-// flopsHTTPClient is a simple HTTP client for the FLOps API (port 5072).
-var flopsHTTPClient = &http.Client{Timeout: 30 * time.Second}
+// The FLOps addon has no typed methods in oakestra-go, so these go through
+// Client.NewRequest/Do directly (the library's escape hatch for endpoints
+// it doesn't know about), which still gets us JSON encoding, error
+// translation, and, via flopsClient, reuse of the System Manager's token.
 
-func flopsPost(endpoint string, body interface{}, action string) error {
-	baseURL, err := flopsBaseURL()
+func flopsPost(ctx context.Context, endpoint string, body interface{}, action string) error {
+	client, err := flopsClient(ctx)
 	if err != nil {
 		return err
 	}
-	token, err := api.GetToken()
+	req, err := client.NewRequest(ctx, http.MethodPost, endpoint, body)
 	if err != nil {
 		return err
 	}
-	data, err := json.Marshal(body)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequest(http.MethodPost, baseURL+endpoint, bytes.NewReader(data))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := flopsHTTPClient.Do(req)
+	resp, err := client.Do(ctx, req, nil)
 	if err != nil {
 		return fmt.Errorf("%s: %w", action, err)
 	}
-	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("%s returned HTTP %d: %s", action, resp.StatusCode, string(raw))
-	}
 	fmt.Printf("%s %s\n", green("✓"), action)
 	if len(raw) > 0 {
 		fmt.Println(string(raw))
@@ -343,20 +356,15 @@ func flopsPost(endpoint string, body interface{}, action string) error {
 	return nil
 }
 
-func flopsGet(endpoint string, params map[string]string) error {
-	baseURL, err := flopsBaseURL()
+func flopsGet(ctx context.Context, endpoint string, params map[string]string) error {
+	client, err := flopsClient(ctx)
 	if err != nil {
 		return err
 	}
-	token, err := api.GetToken()
+	req, err := client.NewRequest(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest(http.MethodGet, baseURL+endpoint, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
 	if len(params) > 0 {
 		q := req.URL.Query()
 		for k, v := range params {
@@ -364,46 +372,26 @@ func flopsGet(endpoint string, params map[string]string) error {
 		}
 		req.URL.RawQuery = q.Encode()
 	}
-	resp, err := flopsHTTPClient.Do(req)
+	resp, err := client.Do(ctx, req, nil)
 	if err != nil {
 		return fmt.Errorf("GET %s: %w", endpoint, err)
 	}
-	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("GET %s returned HTTP %d: %s", endpoint, resp.StatusCode, string(raw))
-	}
 	fmt.Println(string(raw))
 	return nil
 }
 
-func flopsDelete(endpoint string, body map[string]string) error {
-	baseURL, err := flopsBaseURL()
+func flopsDelete(ctx context.Context, endpoint string, body map[string]string) error {
+	client, err := flopsClient(ctx)
 	if err != nil {
 		return err
 	}
-	token, err := api.GetToken()
+	req, err := client.NewRequest(ctx, http.MethodDelete, endpoint, body)
 	if err != nil {
 		return err
 	}
-	data, err := json.Marshal(body)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequest(http.MethodDelete, baseURL+endpoint, bytes.NewReader(data))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := flopsHTTPClient.Do(req)
-	if err != nil {
+	if _, err := client.Do(ctx, req, nil); err != nil {
 		return fmt.Errorf("DELETE %s: %w", endpoint, err)
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("DELETE %s returned HTTP %d: %s", endpoint, resp.StatusCode, string(raw))
 	}
 	fmt.Printf("%s FLOps database reset.\n", green("✓"))
 	return nil

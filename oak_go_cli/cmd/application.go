@@ -8,10 +8,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
 	"github.com/spf13/cobra"
 
 	"github.com/oakestra/oak-go-cli/internal/api"
 	"github.com/oakestra/oak-go-cli/internal/config"
+	oakestra "github.com/oakestra/oakestra-cli/oakestra-go"
 )
 
 // applicationCmd is the top-level "application" / "app" / "a" command.
@@ -53,7 +55,7 @@ var appShowCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		apps, err := client.GetApplications()
+		apps, _, err := client.Applications.List(cmd.Context())
 		if err != nil {
 			return err
 		}
@@ -66,7 +68,7 @@ var appShowCmd = &cobra.Command{
 	},
 }
 
-func printApplicationsTable(apps []api.Application) {
+func printApplicationsTable(apps []*oakestra.Application) {
 	headers := []string{"APPLICATION ID", "NAME", "NAMESPACE", "DESCRIPTION", "SERVICES"}
 	rows := make([][]string, len(apps))
 	for i, a := range apps {
@@ -124,15 +126,16 @@ Example:
 		if err != nil {
 			return err
 		}
+		ctx := cmd.Context()
 
 		fmt.Printf("Creating application(s) from %s …\n", slaPath)
-		allApps, err := client.CreateApplication(sla)
+		allApps, _, err := client.Applications.Create(ctx, sla)
 		if err != nil {
 			return err
 		}
 
 		// Filter to only the newly-created apps (same logic as Python).
-		var newApps []api.Application
+		var newApps []*oakestra.Application
 		for _, a := range allApps {
 			for _, name := range appsInSLA {
 				if a.ApplicationName == name {
@@ -153,8 +156,8 @@ Example:
 			fmt.Println("\nDeploying all services …")
 			for _, a := range newApps {
 				for _, svcID := range a.Microservices {
-					if err := client.DeployInstance(svcID); err != nil {
-						fmt.Fprintf(os.Stderr, "  ✗ deploy %s: %v\n", svcID, err)
+					if _, err := client.Services.DeployInstance(ctx, svcID); err != nil {
+						fmt.Fprintf(os.Stderr, "  ✗ deploy %s: %v\n", svcID, api.Hint(err))
 					} else {
 						fmt.Printf("  ✓ deployed instance for service %s\n", svcID)
 					}
@@ -178,13 +181,14 @@ var appDeleteCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		ctx := cmd.Context()
 
 		if len(args) == 1 {
-			app, err := client.ResolveApplicationID(args[0])
+			app, _, err := client.Applications.ResolveByNameOrID(ctx, args[0])
 			if err != nil {
 				return err
 			}
-			if err := client.DeleteApplication(app.ApplicationID); err != nil {
+			if _, err := client.Applications.Delete(ctx, app.ApplicationID); err != nil {
 				return err
 			}
 			fmt.Printf("✓ Deleted application %s (%s)\n", app.ApplicationName, app.ApplicationID)
@@ -192,7 +196,7 @@ var appDeleteCmd = &cobra.Command{
 		}
 
 		// Delete all.
-		apps, err := client.GetApplications()
+		apps, _, err := client.Applications.List(ctx)
 		if err != nil {
 			return err
 		}
@@ -217,8 +221,8 @@ var appDeleteCmd = &cobra.Command{
 		}
 
 		for _, a := range apps {
-			if err := client.DeleteApplication(a.ApplicationID); err != nil {
-				fmt.Fprintf(os.Stderr, "  ✗ delete %s: %v\n", a.ApplicationID, err)
+			if _, err := client.Applications.Delete(ctx, a.ApplicationID); err != nil {
+				fmt.Fprintf(os.Stderr, "  ✗ delete %s: %v\n", a.ApplicationID, api.Hint(err))
 			} else {
 				fmt.Printf("  ✓ Deleted application %s (%s)\n", a.ApplicationID, a.ApplicationName)
 			}

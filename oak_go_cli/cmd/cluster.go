@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/oakestra/oak-go-cli/internal/api"
+	oakestra "github.com/oakestra/oakestra-cli/oakestra-go"
 )
 
 var clusterCmd = &cobra.Command{
@@ -40,7 +41,7 @@ var clusterListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		clusters, err := client.GetClusters(clusterListAll)
+		clusters, _, err := client.Clusters.List(cmd.Context(), &oakestra.ClusterListOptions{ActiveOnly: !clusterListAll})
 		if err != nil {
 			return err
 		}
@@ -70,7 +71,7 @@ var clusterInfoCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		cluster, err := client.FindCluster(args[0])
+		cluster, _, err := client.Clusters.FindByNameOrID(cmd.Context(), args[0])
 		if err != nil {
 			return err
 		}
@@ -88,7 +89,16 @@ func clusterStatusDot(active bool) string {
 	return red("○ inactive")
 }
 
-func printClustersTable(clusters []api.Cluster) {
+// portDisplay renders a cluster port, falling back to a dim placeholder when
+// the API didn't return one (StringOrNumber.String() is "" in that case).
+func portDisplay(port string) string {
+	if port == "" {
+		return dim("-")
+	}
+	return port
+}
+
+func printClustersTable(clusters []*oakestra.Cluster) {
 	headers := []string{"CLUSTER ID", "NAME", "IP", "PORT", "STATUS", "NODES", "CPU%", "MEM%"}
 	rows := make([][]string, len(clusters))
 	for i, c := range clusters {
@@ -96,7 +106,7 @@ func printClustersTable(clusters []api.Cluster) {
 			colorID(c.ClusterID),
 			colorName(c.ClusterName),
 			green(c.ClusterIP),
-			c.PortString(),
+			portDisplay(c.Port.String()),
 			clusterStatusDot(c.Active),
 			bold(fmt.Sprintf("%d", c.ActiveNodes)),
 			fmt.Sprintf("%.1f%%", c.CPUPercent),
@@ -106,7 +116,7 @@ func printClustersTable(clusters []api.Cluster) {
 	printTable(headers, rows)
 }
 
-func printClusterDetail(c *api.Cluster) {
+func printClusterDetail(c *oakestra.Cluster) {
 	// Format slice fields as comma-separated strings.
 	join := func(ss []string) string {
 		if len(ss) == 0 {
@@ -126,7 +136,7 @@ func printClusterDetail(c *api.Cluster) {
 		{"Name:", colorName(c.ClusterName)},
 		{"Candidate name:", c.CandidateName},
 		{"IP:", green(c.ClusterIP)},
-		{"Port:", c.PortString()},
+		{"Port:", portDisplay(c.Port.String())},
 		{"Location:", c.ClusterLocation},
 		{"Status:", clusterStatusDot(c.Active)},
 		{"Active nodes:", bold(fmt.Sprintf("%d", c.ActiveNodes))},
