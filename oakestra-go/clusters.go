@@ -46,9 +46,7 @@ func (v *StringOrNumber) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// String returns the value as a printable string regardless of whether the
-// API sent it as a JSON string or a JSON number. It returns "" if the value
-// was null or never set.
+// String returns the decoded value, or "" if it was null or unset.
 func (v StringOrNumber) String() string {
 	return v.s
 }

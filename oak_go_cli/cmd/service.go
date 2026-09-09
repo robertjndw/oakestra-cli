@@ -140,16 +140,8 @@ var svcInspectCmd = &cobra.Command{
 		if !svcFollow {
 			return run()
 		}
-		for {
-			clearScreen()
-			if err := run(); err != nil {
-				// This loop never returns to Execute(), so it has to apply
-				// the hint itself rather than relying on the central one.
-				fmt.Fprintln(os.Stderr, api.Hint(err))
-			}
-			fmt.Println(dim("\nRefreshing every 5s — Ctrl+C to stop"))
-			time.Sleep(5 * time.Second)
-		}
+		runFollow(run)
+		return nil
 	},
 }
 
@@ -204,16 +196,8 @@ var svcLogsCmd = &cobra.Command{
 		if !svcLogsFollow {
 			return run()
 		}
-		for {
-			clearScreen()
-			if err := run(); err != nil {
-				// This loop never returns to Execute(), so it has to apply
-				// the hint itself rather than relying on the central one.
-				fmt.Fprintln(os.Stderr, api.Hint(err))
-			}
-			fmt.Println(dim("\nRefreshing every 5s — Ctrl+C to stop"))
-			time.Sleep(5 * time.Second)
-		}
+		runFollow(run)
+		return nil
 	},
 }
 
@@ -576,6 +560,20 @@ func findInstance(svc *oakestra.Service, num int) (*oakestra.ServiceInstance, bo
 
 func clearScreen() {
 	fmt.Print("\033[2J\033[H")
+}
+
+// runFollow re-runs run every 5s until interrupted. It never returns to
+// Execute(), so it applies api.Hint itself instead of relying on the
+// central print point there.
+func runFollow(run func() error) {
+	for {
+		clearScreen()
+		if err := run(); err != nil {
+			fmt.Fprintln(os.Stderr, api.Hint(err))
+		}
+		fmt.Println(dim("\nRefreshing every 5s — Ctrl+C to stop"))
+		time.Sleep(5 * time.Second)
+	}
 }
 
 // ─── progress bar ─────────────────────────────────────────────────────────────
