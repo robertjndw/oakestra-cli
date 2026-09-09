@@ -22,39 +22,35 @@ type ClusterMetricPoint struct {
 // StringOrNumber decodes a JSON field that different Oakestra API versions
 // encode inconsistently as either a string or a number (e.g. Cluster.Port).
 type StringOrNumber struct {
-	raw json.RawMessage
+	s string
 }
 
-// UnmarshalJSON implements json.Unmarshaler.
+// UnmarshalJSON implements json.Unmarshaler. It resolves the string/number
+// ambiguity once at decode time so String() is a plain field access.
 func (v *StringOrNumber) UnmarshalJSON(data []byte) error {
-	v.raw = append(v.raw[:0], data...)
-	return nil
-}
-
-// MarshalJSON implements json.Marshaler.
-func (v StringOrNumber) MarshalJSON() ([]byte, error) {
-	if v.raw == nil {
-		return []byte("null"), nil
+	if len(data) == 0 || string(data) == "null" {
+		v.s = ""
+		return nil
 	}
-	return v.raw, nil
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		v.s = s
+		return nil
+	}
+	var f float64
+	if err := json.Unmarshal(data, &f); err == nil {
+		v.s = fmt.Sprintf("%d", int(f))
+		return nil
+	}
+	v.s = string(data)
+	return nil
 }
 
 // String returns the value as a printable string regardless of whether the
 // API sent it as a JSON string or a JSON number. It returns "" if the value
 // was null or never set.
 func (v StringOrNumber) String() string {
-	if len(v.raw) == 0 || string(v.raw) == "null" {
-		return ""
-	}
-	var s string
-	if err := json.Unmarshal(v.raw, &s); err == nil {
-		return s
-	}
-	var f float64
-	if err := json.Unmarshal(v.raw, &f); err == nil {
-		return fmt.Sprintf("%d", int(f))
-	}
-	return string(v.raw)
+	return v.s
 }
 
 // Cluster represents a cluster returned by the /api/clusters/ endpoint.

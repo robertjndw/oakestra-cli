@@ -165,33 +165,11 @@ func (s *ServicesService) UndeployInstance(ctx context.Context, serviceID string
 // returns *MultipleMatchesError if more than one service shares that name,
 // and *NotFoundError if none do.
 func (s *ServicesService) ResolveByNameOrID(ctx context.Context, idOrName string) (*Service, *Response, error) {
-	// Try direct ID lookup first.
-	svc, resp, err := s.Get(ctx, idOrName)
-	if err == nil {
-		return svc, resp, nil
-	}
-
-	// Fall back to name search.
-	all, listResp, err := s.List(ctx, nil)
-	if err != nil {
-		return nil, listResp, err
-	}
-	var matches []*Service
-	for _, svc := range all {
-		if svc.MicroserviceName == idOrName {
-			matches = append(matches, svc)
-		}
-	}
-	switch len(matches) {
-	case 0:
-		return nil, listResp, &NotFoundError{Kind: "service", Query: idOrName}
-	case 1:
-		return matches[0], listResp, nil
-	default:
-		var ms []Match
-		for _, m := range matches {
-			ms = append(ms, Match{ID: m.MicroserviceID, Name: m.MicroserviceName, Detail: m.GetApplicationName()})
-		}
-		return nil, listResp, &MultipleMatchesError{Kind: "service", Query: idOrName, Matches: ms}
-	}
+	list := func(ctx context.Context) ([]*Service, *Response, error) { return s.List(ctx, nil) }
+	return resolveByNameOrID(ctx, "service", idOrName, s.Get, list,
+		func(svc *Service) string { return svc.MicroserviceName },
+		func(svc *Service) Match {
+			return Match{ID: svc.MicroserviceID, Name: svc.MicroserviceName, Detail: svc.GetApplicationName()}
+		},
+	)
 }

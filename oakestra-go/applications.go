@@ -75,33 +75,10 @@ func (s *ApplicationsService) Delete(ctx context.Context, applicationID string) 
 // returns *MultipleMatchesError if more than one application shares that
 // name, and *NotFoundError if none do.
 func (s *ApplicationsService) ResolveByNameOrID(ctx context.Context, idOrName string) (*Application, *Response, error) {
-	// Try direct ID lookup first.
-	app, resp, err := s.Get(ctx, idOrName)
-	if err == nil {
-		return app, resp, nil
-	}
-
-	// Fall back to name search.
-	all, listResp, err := s.List(ctx)
-	if err != nil {
-		return nil, listResp, err
-	}
-	var matches []*Application
-	for _, a := range all {
-		if a.ApplicationName == idOrName {
-			matches = append(matches, a)
-		}
-	}
-	switch len(matches) {
-	case 0:
-		return nil, listResp, &NotFoundError{Kind: "application", Query: idOrName}
-	case 1:
-		return matches[0], listResp, nil
-	default:
-		var ms []Match
-		for _, m := range matches {
-			ms = append(ms, Match{ID: m.ApplicationID, Name: m.ApplicationName, Detail: m.ApplicationNamespace})
-		}
-		return nil, listResp, &MultipleMatchesError{Kind: "application", Query: idOrName, Matches: ms}
-	}
+	return resolveByNameOrID(ctx, "application", idOrName, s.Get, s.List,
+		func(a *Application) string { return a.ApplicationName },
+		func(a *Application) Match {
+			return Match{ID: a.ApplicationID, Name: a.ApplicationName, Detail: a.ApplicationNamespace}
+		},
+	)
 }

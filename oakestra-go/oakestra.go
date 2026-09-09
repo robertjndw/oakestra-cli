@@ -165,9 +165,12 @@ func (c *Client) BaseURL() *url.URL {
 }
 
 // Response wraps an *http.Response returned by Do. The body has already
-// been fully read and closed by the time it is returned to the caller.
+// been fully read and closed by the time it is returned to the caller;
+// RawBody holds those bytes so callers that need them (e.g. an endpoint
+// with no typed response) don't have to re-read Body.
 type Response struct {
 	*http.Response
+	RawBody []byte
 }
 
 // Token returns the client's current bearer token, obtaining or refreshing
@@ -251,7 +254,7 @@ func (c *Client) Do(ctx context.Context, req *http.Request, v any) (*Response, e
 	// Re-wrap the body so callers inspecting *Response can still read it if
 	// they want to (it is already drained above).
 	httpResp.Body = io.NopCloser(bytes.NewReader(data))
-	resp := &Response{Response: httpResp}
+	resp := &Response{Response: httpResp, RawBody: data}
 
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
 		if httpResp.StatusCode == http.StatusUnauthorized || httpResp.StatusCode == http.StatusForbidden {

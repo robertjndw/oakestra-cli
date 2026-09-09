@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -14,7 +13,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/oakestra/oak-go-cli/internal/api"
 	"github.com/oakestra/oak-go-cli/internal/config"
 	oakestra "github.com/oakestra/oakestra-cli/oakestra-go"
 )
@@ -193,16 +191,12 @@ var flopsClearRegistryCmd = &cobra.Command{
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
 // flopsBaseURL returns the Root FL Manager URL (system_manager_ip:5072).
-func flopsBaseURL() (string, error) {
-	cfg, err := config.Load()
-	if err != nil {
-		return "", err
-	}
+func flopsBaseURL(cfg *config.Config) string {
 	ip := cfg.SystemManagerIP
 	if ip == "" {
 		ip = config.DefaultSystemManagerIP
 	}
-	return fmt.Sprintf("http://%s:5072", ip), nil
+	return fmt.Sprintf("http://%s:5072", ip)
 }
 
 // flopsClient builds an oakestra-go client pointed at the FL Manager (port
@@ -210,7 +204,15 @@ func flopsBaseURL() (string, error) {
 // Manager's bearer token rather than logging in separately, since both
 // services accept the same Oakestra credentials.
 func flopsClient(ctx context.Context) (*oakestra.Client, error) {
-	smClient, err := api.New()
+	cfg, err := config.Load()
+	if err != nil {
+		return nil, err
+	}
+	smClient, err := oakestra.NewClient(
+		oakestra.WithBaseURL(cfg.URL()),
+		oakestra.WithBasicLogin(cfg.GetUsername(), cfg.GetPassword()),
+		oakestra.WithUserAgent("oak-cli"),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -219,12 +221,8 @@ func flopsClient(ctx context.Context) (*oakestra.Client, error) {
 		return nil, err
 	}
 
-	baseURL, err := flopsBaseURL()
-	if err != nil {
-		return nil, err
-	}
 	return oakestra.NewClient(
-		oakestra.WithBaseURL(baseURL),
+		oakestra.WithBaseURL(flopsBaseURL(cfg)),
 		oakestra.WithToken(token),
 		oakestra.WithUserAgent("oak-cli"),
 	)
@@ -348,10 +346,9 @@ func flopsPost(ctx context.Context, endpoint string, body interface{}, action st
 	if err != nil {
 		return fmt.Errorf("%s: %w", action, err)
 	}
-	raw, _ := io.ReadAll(resp.Body)
 	fmt.Printf("%s %s\n", green("✓"), action)
-	if len(raw) > 0 {
-		fmt.Println(string(raw))
+	if len(resp.RawBody) > 0 {
+		fmt.Println(string(resp.RawBody))
 	}
 	return nil
 }
@@ -376,8 +373,7 @@ func flopsGet(ctx context.Context, endpoint string, params map[string]string) er
 	if err != nil {
 		return fmt.Errorf("GET %s: %w", endpoint, err)
 	}
-	raw, _ := io.ReadAll(resp.Body)
-	fmt.Println(string(raw))
+	fmt.Println(string(resp.RawBody))
 	return nil
 }
 

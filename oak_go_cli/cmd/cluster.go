@@ -93,7 +93,7 @@ func clusterStatusDot(active bool) string {
 // the API didn't return one (StringOrNumber.String() is "" in that case).
 func portDisplay(port string) string {
 	if port == "" {
-		return dim("-")
+		return dim("—")
 	}
 	return port
 }

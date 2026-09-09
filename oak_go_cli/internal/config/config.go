@@ -138,6 +138,16 @@ func SetCredentials(username, password string) error {
 	return Save(cfg)
 }
 
+// URL returns the full base URL of the system manager for this config.
+// Falls back to 0.0.0.0:10000 when no IP is configured.
+func (c *Config) URL() string {
+	ip := c.SystemManagerIP
+	if ip == "" {
+		ip = DefaultSystemManagerIP
+	}
+	return fmt.Sprintf("http://%s:10000", ip)
+}
+
 // SystemManagerURL returns the full base URL of the system manager.
 // Falls back to 0.0.0.0:10000 when no IP is configured.
 func SystemManagerURL() (string, error) {
@@ -145,11 +155,7 @@ func SystemManagerURL() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	ip := cfg.SystemManagerIP
-	if ip == "" {
-		ip = DefaultSystemManagerIP
-	}
-	return fmt.Sprintf("http://%s:10000", ip), nil
+	return cfg.URL(), nil
 }
 
 // Keys returns all configurable general key names.

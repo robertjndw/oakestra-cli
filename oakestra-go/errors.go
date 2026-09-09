@@ -108,19 +108,10 @@ func isConnectionError(err error) bool {
 		return false
 	}
 
+	// *net.OpError and *net.DNSError (dial/lookup failures) both satisfy
+	// net.Error, so a single check covers them too.
 	var netErr net.Error
-	if errors.As(err, &netErr) {
-		return true
-	}
-	var opErr *net.OpError
-	if errors.As(err, &opErr) {
-		return true
-	}
-	var dnsErr *net.DNSError
-	if errors.As(err, &dnsErr) {
-		return true
-	}
-	return false
+	return errors.As(err, &netErr)
 }
 
 // readBodyForError best-effort reads a response body for inclusion in an

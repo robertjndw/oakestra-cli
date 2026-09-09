@@ -20,12 +20,8 @@ func New() (*oakestra.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	url, err := config.SystemManagerURL()
-	if err != nil {
-		return nil, err
-	}
 	return oakestra.NewClient(
-		oakestra.WithBaseURL(url),
+		oakestra.WithBaseURL(cfg.URL()),
 		oakestra.WithBasicLogin(cfg.GetUsername(), cfg.GetPassword()),
 		oakestra.WithUserAgent("oak-cli"),
 	)
@@ -61,9 +57,7 @@ func Hint(err error) error {
 		target := ""
 		if cfg, cfgErr := config.Load(); cfgErr == nil {
 			username = cfg.GetUsername()
-		}
-		if url, urlErr := config.SystemManagerURL(); urlErr == nil {
-			target = url
+			target = cfg.URL()
 		}
 		return fmt.Errorf(
 			"login failed (HTTP %d): %s\n"+

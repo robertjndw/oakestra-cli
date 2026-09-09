@@ -596,26 +596,9 @@ func newBar(total int, description string) *progressbar.ProgressBar {
 // ─── resolve app by name ──────────────────────────────────────────────────────
 
 func resolveAppIDByName(ctx context.Context, client *oakestra.Client, name string) (string, error) {
-	apps, _, err := client.Applications.List(ctx)
+	app, _, err := client.Applications.ResolveByNameOrID(ctx, name)
 	if err != nil {
 		return "", err
 	}
-	var matches []*oakestra.Application
-	for _, a := range apps {
-		if a.ApplicationName == name {
-			matches = append(matches, a)
-		}
-	}
-	switch len(matches) {
-	case 0:
-		return "", fmt.Errorf("no application found with name %q", name)
-	case 1:
-		return matches[0].ApplicationID, nil
-	default:
-		ids := ""
-		for _, m := range matches {
-			ids += "\n  " + m.ApplicationID
-		}
-		return "", fmt.Errorf("multiple applications named %q — use --app-id instead:%s", name, ids)
-	}
+	return app.ApplicationID, nil
 }
