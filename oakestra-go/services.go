@@ -108,7 +108,7 @@ func (s *ServicesService) Get(ctx context.Context, serviceID string) (*Service, 
 }
 
 // List returns services, optionally filtered to one application.
-func (s *ServicesService) List(ctx context.Context, opts *ServiceListOptions) ([]*Service, *Response, error) {
+func (s *ServicesService) List(ctx context.Context, opts *ServiceListOptions) ([]Service, *Response, error) {
 	endpoint := "api/services/"
 	appID := ""
 	if opts != nil {
@@ -122,7 +122,7 @@ func (s *ServicesService) List(ctx context.Context, opts *ServiceListOptions) ([
 	if err != nil {
 		return nil, nil, err
 	}
-	var svcs []*Service
+	var svcs []Service
 	resp, err := s.client.Do(ctx, req, &svcs)
 	if err != nil {
 		return nil, resp, err
@@ -165,7 +165,7 @@ func (s *ServicesService) UndeployInstance(ctx context.Context, serviceID string
 // returns *MultipleMatchesError if more than one service shares that name,
 // and *NotFoundError if none do.
 func (s *ServicesService) ResolveByNameOrID(ctx context.Context, idOrName string) (*Service, *Response, error) {
-	list := func(ctx context.Context) ([]*Service, *Response, error) { return s.List(ctx, nil) }
+	list := func(ctx context.Context) ([]Service, *Response, error) { return s.List(ctx, nil) }
 	return resolveByNameOrID(ctx, "service", idOrName, s.Get, list,
 		func(svc *Service) string { return svc.MicroserviceName },
 		func(svc *Service) Match {

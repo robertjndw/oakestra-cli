@@ -443,10 +443,11 @@ func scaleDown(ctx context.Context, client *oakestra.Client, svc *oakestra.Servi
 
 // ─── display helpers ──────────────────────────────────────────────────────────
 
-func printServicesTable(svcs []*oakestra.Service) {
+func printServicesTable(svcs []oakestra.Service) {
 	headers := []string{"SERVICE ID", "NAME", "NAMESPACE", "APPLICATION", "INSTANCES", "STATUS"}
 	rows := make([][]string, len(svcs))
-	for i, s := range svcs {
+	for i := range svcs {
+		s := &svcs[i]
 		rows[i] = []string{
 			colorID(s.MicroserviceID),
 			colorName(s.MicroserviceName),

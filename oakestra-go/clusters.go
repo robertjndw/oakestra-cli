@@ -95,7 +95,7 @@ type ClusterListOptions struct {
 }
 
 // List returns clusters, optionally restricted to active ones.
-func (s *ClustersService) List(ctx context.Context, opts *ClusterListOptions) ([]*Cluster, *Response, error) {
+func (s *ClustersService) List(ctx context.Context, opts *ClusterListOptions) ([]Cluster, *Response, error) {
 	endpoint := "api/clusters/"
 	if opts != nil && opts.ActiveOnly {
 		endpoint += "active"
@@ -105,7 +105,7 @@ func (s *ClustersService) List(ctx context.Context, opts *ClusterListOptions) ([
 	if err != nil {
 		return nil, nil, err
 	}
-	var clusters []*Cluster
+	var clusters []Cluster
 	resp, err := s.client.Do(ctx, req, &clusters)
 	if err != nil {
 		return nil, resp, err
@@ -125,16 +125,16 @@ func (s *ClustersService) FindByNameOrID(ctx context.Context, nameOrID string) (
 		return nil, resp, err
 	}
 
-	for _, cl := range all {
-		if cl.ClusterID == nameOrID {
-			return cl, resp, nil
+	for i := range all {
+		if all[i].ClusterID == nameOrID {
+			return &all[i], resp, nil
 		}
 	}
 
 	var matches []*Cluster
-	for _, cl := range all {
-		if cl.ClusterName == nameOrID || cl.CandidateName == nameOrID {
-			matches = append(matches, cl)
+	for i := range all {
+		if all[i].ClusterName == nameOrID || all[i].CandidateName == nameOrID {
+			matches = append(matches, &all[i])
 		}
 	}
 	switch len(matches) {

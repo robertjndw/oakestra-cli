@@ -98,7 +98,7 @@ func portDisplay(port string) string {
 	return port
 }
 
-func printClustersTable(clusters []*oakestra.Cluster) {
+func printClustersTable(clusters []oakestra.Cluster) {
 	headers := []string{"CLUSTER ID", "NAME", "IP", "PORT", "STATUS", "NODES", "CPU%", "MEM%"}
 	rows := make([][]string, len(clusters))
 	for i, c := range clusters {

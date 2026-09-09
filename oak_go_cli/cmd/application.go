@@ -68,7 +68,7 @@ var appShowCmd = &cobra.Command{
 	},
 }
 
-func printApplicationsTable(apps []*oakestra.Application) {
+func printApplicationsTable(apps []oakestra.Application) {
 	headers := []string{"APPLICATION ID", "NAME", "NAMESPACE", "DESCRIPTION", "SERVICES"}
 	rows := make([][]string, len(apps))
 	for i, a := range apps {
@@ -135,7 +135,7 @@ Example:
 		}
 
 		// Filter to only the newly-created apps (same logic as Python).
-		var newApps []*oakestra.Application
+		var newApps []oakestra.Application
 		for _, a := range allApps {
 			for _, name := range appsInSLA {
 				if a.ApplicationName == name {

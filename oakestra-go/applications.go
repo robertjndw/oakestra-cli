@@ -21,12 +21,12 @@ type Application struct {
 }
 
 // List returns all applications.
-func (s *ApplicationsService) List(ctx context.Context) ([]*Application, *Response, error) {
+func (s *ApplicationsService) List(ctx context.Context) ([]Application, *Response, error) {
 	req, err := s.client.NewRequest(ctx, http.MethodGet, "api/applications", nil)
 	if err != nil {
 		return nil, nil, err
 	}
-	var apps []*Application
+	var apps []Application
 	resp, err := s.client.Do(ctx, req, &apps)
 	if err != nil {
 		return nil, resp, err
@@ -49,12 +49,12 @@ func (s *ApplicationsService) Get(ctx context.Context, applicationID string) (*A
 }
 
 // Create deploys a new application from an SLA payload.
-func (s *ApplicationsService) Create(ctx context.Context, sla any) ([]*Application, *Response, error) {
+func (s *ApplicationsService) Create(ctx context.Context, sla any) ([]Application, *Response, error) {
 	req, err := s.client.NewRequest(ctx, http.MethodPost, "api/application", sla)
 	if err != nil {
 		return nil, nil, err
 	}
-	var apps []*Application
+	var apps []Application
 	resp, err := s.client.Do(ctx, req, &apps)
 	if err != nil {
 		return nil, resp, err

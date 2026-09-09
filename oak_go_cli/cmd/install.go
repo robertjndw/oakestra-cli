@@ -289,11 +289,12 @@ func probeCluster(cluster *oakestra.Cluster, ip string) bool {
 
 // probeAllClusters probes every cluster in parallel.
 // For each one it tries CLUSTER_IP first, then ROOT_IP as a fallback.
-func probeAllClusters(clusters []*oakestra.Cluster, rootIP string) []clusterProbe {
+func probeAllClusters(clusters []oakestra.Cluster, rootIP string) []clusterProbe {
 	results := make([]clusterProbe, len(clusters))
 	var wg sync.WaitGroup
 	wg.Add(len(clusters))
-	for i, c := range clusters {
+	for i := range clusters {
+		c := &clusters[i]
 		go func() {
 			defer wg.Done()
 			pr := clusterProbe{cluster: c}
