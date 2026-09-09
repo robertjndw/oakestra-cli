@@ -245,7 +245,7 @@ func (c *Client) Do(ctx context.Context, req *http.Request, v any) (*Response, e
 		}
 		return nil, fmt.Errorf("oakestra: %s %s: %w", req.Method, req.URL, err)
 	}
-	defer httpResp.Body.Close()
+	defer func() { _ = httpResp.Body.Close() }()
 
 	data, err := io.ReadAll(httpResp.Body)
 	if err != nil {

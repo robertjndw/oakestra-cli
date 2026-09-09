@@ -184,7 +184,7 @@ var configResetCmd = &cobra.Command{
 func promptPlain(label string) string {
 	fmt.Printf("%s: ", label)
 	var s string
-	fmt.Scanln(&s)
+	_, _ = fmt.Scanln(&s)
 	return s
 }
 
@@ -282,7 +282,7 @@ func installClaudeSkill(url, destPath string) error {
 	if err != nil {
 		return fmt.Errorf("downloading skill: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("downloading skill: HTTP %d", resp.StatusCode)
 	}

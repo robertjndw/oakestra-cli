@@ -81,7 +81,7 @@ func (l *loginTokenSource) Token(ctx context.Context) (string, error) {
 		}
 		return "", fmt.Errorf("oakestra: login request: %w", err)
 	}
-	defer httpResp.Body.Close()
+	defer func() { _ = httpResp.Body.Close() }()
 
 	var result struct {
 		Token string `json:"token"`

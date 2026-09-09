@@ -279,7 +279,7 @@ func probeCluster(cluster *oakestra.Cluster, ip string) bool {
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var s statusResp
 	if err := json.NewDecoder(resp.Body).Decode(&s); err != nil {
 		return false
@@ -496,7 +496,7 @@ func checkFundamentals() error {
 	fmt.Println()
 
 	if len(missing) > 0 {
-		return fmt.Errorf("missing prerequisites: %s\nInstall them and try again.",
+		return fmt.Errorf("missing prerequisites: %s (install them and try again)",
 			strings.Join(missing, ", "))
 	}
 	return nil

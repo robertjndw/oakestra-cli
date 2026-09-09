@@ -516,7 +516,7 @@ func printInstanceDetail(svc *oakestra.Service, instanceNum int) {
 	printKV([][2]string{
 		{"  Status:", colorStatus(inst.Status)},
 		{"  Detail:", inst.StatusDetail},
-		{"  Host:", fmt.Sprintf("%s", inst.HostIP)},
+		{"  Host:", inst.HostIP},
 		{"  Public IP:", inst.PublicIP},
 		{"  Cluster:", colorID(inst.ClusterID)},
 		{"  Location:", inst.ClusterLocation},
