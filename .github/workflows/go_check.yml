@@ -37,13 +37,13 @@ jobs:
         run: go test ./oak_go_cli/... ./oakestra-go/...
 
       - name: golangci-lint (oak_go_cli)
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
           working-directory: oak_go_cli
           version: latest
 
       - name: golangci-lint (oakestra-go)
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
           working-directory: oakestra-go
           version: latest
